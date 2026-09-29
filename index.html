@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Python Mobile Runner</title>
+  <!-- Pyodide CDN: Runs Python directly in the browser with WebAssembly! -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+  <!-- CodeMirror for mobile-friendly code editing with syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --text-color: #f8fafc;
+      --accent-color: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --run-color: #10b981;
+      --run-hover: #059669;
+      --clear-color: #ef4444;
+      --border-color: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      padding: 10px 16px;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--accent-color);
+    }
+
+    .brand svg {
+      width: 24px;
+      height: 24px;
+      fill: currentColor;
+    }
+
+    #status-badge {
+      font-size: 0.75rem;
+      padding: 4px 8px;
+      border-radius: 9999px;
+      background-color: #334155;
+      color: #94a3b8;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #status-badge.ready {
+      background-color: #064e3b;
+      color: #34d399;
+    }
+
+    #status-badge.running {
+      background-color: #451a03;
+      color: #fbbf24;
+    }
+
+    .pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: currentColor;
+      display: inline-block;
+    }
+
+    /* Toolbar for Quick Actions & Snippets */
+    .toolbar {
+      padding: 8px 12px;
+      background: #141f32;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      white-space: nowrap;
+      flex-shrink: 0;
+      scrollbar-width: none;
+    }
+    .toolbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .btn {
+      border: none;
+      outline: none;
+      cursor: pointer;
+      font-weight: 600;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s ease-in-out;
+    }
+
+    .btn-run {
+      background-color: var(--run-color);
+      color: white;
+      box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+    }
+    .btn-run:active {
+      transform: scale(0.96);
+      background-color: var(--run-hover);
+    }
+
+    .btn-secondary {
+      background-color: #334155;
+      color: #f1f5f9;
+    }
+    .btn-secondary:active {
+      background-color: #475569;
+    }
+
+    .chip {
+      background: #1e293b;
+      color: #cbd5e1;
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 5px 10px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .chip:active {
+      background: #334155;
+    }
+
+    /* Main Container (Split Screen) */
+    .main-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    /* Code Editor Box */
+    .editor-box {
+      flex: 1.2;
+      min-height: 140px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      border-bottom: 2px solid var(--border-color);
+    }
+
+    .CodeMirror {
+      height: 100% !important;
+      font-family: "JetBrains Mono", Consolas, Menlo, Monaco, "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      background: #0e1626 !important;
+    }
+
+    /* Quick helper keyboard row for phone coding */
+    .mobile-keys {
+      display: flex;
+      overflow-x: auto;
+      background: #182234;
+      border-top: 1px solid var(--border-color);
+      padding: 4px 6px;
+      gap: 4px;
+      flex-shrink: 0;
+      scrollbar-width: none;
+    }
+    .mobile-keys::-webkit-scrollbar {
+      display: none;
+    }
+
+    .key-btn {
+      background: #25334a;
+      color: #e2e8f0;
+      border: 1px solid #3b4d6a;
+      border-radius: 4px;
+      padding: 6px 12px;
+      font-family: monospace;
+      font-size: 0.9rem;
+      cursor: pointer;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .key-btn:active {
+      background: var(--accent-color);
+      color: #000;
+    }
+
+    /* Terminal Output Box */
+    .terminal-box {
+      flex: 1;
+      background: #030712;
+      display: flex;
+      flex-direction: column;
+      min-height: 100px;
+      overflow: hidden;
+    }
+
+    .terminal-header {
+      padding: 6px 12px;
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .terminal-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .link-btn {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+    .link-btn:hover {
+      color: #f1f5f9;
+    }
+
+    #terminal-output {
+      flex: 1;
+      padding: 10px 12px;
+      overflow-y: auto;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #e5e7eb;
+      line-height: 1.45;
+    }
+
+    .stdout {
+      color: #e2e8f0;
+    }
+    .stderr {
+      color: #f87171;
+    }
+    .sys-msg {
+      color: #38bdf8;
+    }
+
+    /* Responsive adjustments for tablet / desktop preview */
+    @media (min-width: 768px) {
+      .main-container {
+        flex-direction: row;
+      }
+      .editor-box {
+        flex: 1;
+        border-bottom: none;
+        border-right: 2px solid var(--border-color);
+      }
+      .terminal-box {
+        flex: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 128 128">
+        <path d="M63.886 0C28.71 0 3.01 22.38 0 54.402h25.86c2.58-18.06 18.916-29.28 38.026-29.28 20.316 0 35.86 12.04 35.86 31.86v10.32h-40.16C26.544 67.302 5.03 80.202 5.03 103.424c0 23.22 17.78 24.576 39.88 24.576 19.34 0 33.42-7.74 41.16-19.78l1.72 17.2h22.36V66.442C110.15 28.2 89.92 0 63.886 0zm-4.73 103.208c-12.04 0-19.78-5.16-19.78-14.62 0-9.46 7.74-15.48 20.64-15.48h22.36v6.88c0 14.62-11.18 23.22-23.22 23.22z"/>
+      </svg>
+      <span>Python Online</span>
+    </div>
+    <div id="status-badge">
+      <span class="pulse"></span>
+      <span id="status-text">Loading Engine...</span>
+    </div>
+  </header>
+
+  <!-- Quick Action & Sample Bar -->
+  <div class="toolbar">
+    <button class="btn btn-run" id="btn-run" disabled>
+      ▶ Run Code
+    </button>
+    <button class="btn btn-secondary" id="btn-clear">
+      Clear Output
+    </button>
+    <span style="border-left: 1px solid var(--border-color); height: 20px; margin: 0 4px;"></span>
+    <span style="font-size: 0.75rem; color: #64748b;">Examples:</span>
+    <button class="chip" onclick="loadSnippet('hello')">👋 Hello World</button>
+    <button class="chip" onclick="loadSnippet('calculator')">🧮 Math & Loop</button>
+    <button class="chip" onclick="loadSnippet('primes')">🔢 Find Primes</button>
+    <button class="chip" onclick="loadSnippet('json')">📦 JSON Data</button>
+  </div>
+
+  <!-- Main Area -->
+  <div class="main-container">
+    <!-- Editor Box -->
+    <div class="editor-box">
+      <textarea id="code-editor"></textarea>
+      
+      <!-- Convenient phone keyboard symbols -->
+      <div class="mobile-keys">
+        <button class="key-btn" onclick="insertSymbol('\t')">Tab</button>
+        <button class="key-btn" onclick="insertSymbol(':')">:</button>
+        <button class="key-btn" onclick="insertSymbol('(')">(</button>
+        <button class="key-btn" onclick="insertSymbol(')')">)</button>
+        <button class="key-btn" onclick="insertSymbol('[')">[</button>
+        <button class="key-btn" onclick="insertSymbol(']')">]</button>
+        <button class="key-btn" onclick="insertSymbol('{')">{</button>
+        <button class="key-btn" onclick="insertSymbol('}')">}</button>
+        <button class="key-btn" onclick="insertSymbol('\"')">"</button>
+        <button class="key-btn" onclick="insertSymbol('\'')">'</button>
+        <button class="key-btn" onclick="insertSymbol('=')">=</button>
+        <button class="key-btn" onclick="insertSymbol('+')">+</button>
+        <button class="key-btn" onclick="insertSymbol('-')">-</button>
+        <button class="key-btn" onclick="insertSymbol('*')">*</button>
+        <button class="key-btn" onclick="insertSymbol('#')">#</button>
+      </div>
+    </div>
+
+    <!-- Output Box -->
+    <div class="terminal-box">
+      <div class="terminal-header">
+        <span>Terminal Console</span>
+        <div class="terminal-actions">
+          <button class="link-btn" onclick="clearOutput()">Clear</button>
+        </div>
+      </div>
+      <div id="terminal-output"><span class="sys-msg">Initializing Python runtime (WebAssembly)...&#10;Ready in a few seconds without installing anything!&#10;</span></div>
+    </div>
+  </div>
+
+  <script>
+    let pyodide = null;
+    let editor = null;
+
+    const defaultCode = `# Welcome to Python Online for Mobile!
+# You don't need to install anything.
+
+def greet(name):
+    return f"Hello, {name}! Running Python directly on your phone."
+
+names = ["Alice", "Bob", "Charlie"]
+for n in names:
+    print(greet(n))
+
+print("\\nSum of numbers 1 to 100:")
+print(sum(range(1, 101)))
+`;
+
+    const snippets = {
+      hello: `# Simple print
+print("Hello from your phone browser!")
+name = "World"
+print(f"Welcome, {name}!")
+`,
+      calculator: `# Factorial and fibonacci
+def fibonacci(n):
+    a, b = 0, 1
+    result = []
+    for _ in range(n):
+        result.append(a)
+        a, b = b, a + b
+    return result
+
+print("First 10 Fibonacci numbers:")
+print(fibonacci(10))
+`,
+      primes: `# Find prime numbers up to 50
+def is_prime(num):
+    if num < 2:
+        return False
+    for i in range(2, int(num**0.5) + 1):
+        if num % i == 0:
+            return False
+    return True
+
+primes = [x for x in range(50) if is_prime(x)]
+print("Primes under 50:")
+print(primes)
+`,
+      json: `import json
+
+data = {
+    "user": "Mobile Dev",
+    "runs_on": "WebAssembly / Browser",
+    "features": ["No installation", "Zero server lag", "Mobile UI"]
+}
+
+formatted = json.dumps(data, indent=2)
+print("JSON representation:")
+print(formatted)
+`
+    };
+
+    // Initialize CodeMirror Editor
+    function initEditor() {
+      const savedCode = localStorage.getItem("python_saved_code") || defaultCode;
+      editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+        mode: "python",
+        theme: "dracula",
+        lineNumbers: true,
+        indentUnit: 4,
+        tabSize: 4,
+        indentWithTabs: false,
+        lineWrapping: true,
+        autofocus: false,
+        extraKeys: {
+          "Tab": function(cm) {
+            cm.replaceSelection("    ", "end");
+          }
+        }
+      });
+
+      editor.setValue(savedCode);
+
+      // Auto-save code on change
+      editor.on("change", () => {
+        localStorage.setItem("python_saved_code", editor.getValue());
+      });
+    }
+
+    // Insert symbol helper for mobile keyboards
+    function insertSymbol(symbol) {
+      if (!editor) return;
+      const doc = editor.getDoc();
+      const cursor = doc.getCursor();
+      doc.replaceRange(symbol, cursor);
+      editor.focus();
+    }
+
+    function appendOutput(text, type = "stdout") {
+      const outElem = document.getElementById("terminal-output");
+      const span = document.createElement("span");
+      span.className = type;
+      span.textContent = text;
+      outElem.appendChild(span);
+      outElem.scrollTop = outElem.scrollHeight;
+    }
+
+    function clearOutput() {
+      document.getElementById("terminal-output").innerHTML = "";
+    }
+
+    function loadSnippet(key) {
+      if (snippets[key] && editor) {
+        editor.setValue(snippets[key]);
+      }
+    }
+
+    // Initialize Pyodide
+    async function initPyodideEngine() {
+      const statusBadge = document.getElementById("status-badge");
+      const statusText = document.getElementById("status-text");
+      const runBtn = document.getElementById("btn-run");
+
+      try {
+        pyodide = await loadPyodide({
+          stdout: (text) => {
+            appendOutput(text + "\n", "stdout");
+          },
+          stderr: (text) => {
+            appendOutput(text + "\n", "stderr");
+          }
+        });
+
+        // Set status to ready
+        statusBadge.className = "ready";
+        statusText.textContent = "Python Ready";
+        runBtn.removeAttribute("disabled");
+        appendOutput("✓ Python 3.12 (Pyodide) is ready!\nTap 'Run Code' to execute.\n---------------------------------------\n", "sys-msg");
+      } catch (err) {
+        statusText.textContent = "Engine Error";
+        appendOutput("Failed to load Python engine: " + err + "\n", "stderr");
+      }
+    }
+
+    // Run Code
+    async function runCode() {
+      if (!pyodide || !editor) return;
+
+      const code = editor.getValue();
+      const runBtn = document.getElementById("btn-run");
+      const statusBadge = document.getElementById("status-badge");
+      const statusText = document.getElementById("status-text");
+
+      runBtn.setAttribute("disabled", "true");
+      statusBadge.className = "running";
+      statusText.textContent = "Running...";
+      
+      appendOutput(`>>> Running script...\n`, "sys-msg");
+
+      // Give UI a chance to update
+      await new Promise(r => setTimeout(r, 20));
+
+      const startTime = performance.now();
+      try {
+        await pyodide.runPythonAsync(code);
+        const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+        appendOutput(`\n[Process completed in ${duration}s]\n`, "sys-msg");
+      } catch (err) {
+        appendOutput(`\n${err}\n`, "stderr");
+      } finally {
+        statusBadge.className = "ready";
+        statusText.textContent = "Python Ready";
+        runBtn.removeAttribute("disabled");
+      }
+    }
+
+    // Attach listeners
+    document.getElementById("btn-run").addEventListener("click", runCode);
+    document.getElementById("btn-clear").addEventListener("click", clearOutput);
+
+    // Boot
+    window.addEventListener("DOMContentLoaded", () => {
+      initEditor();
+      initPyodideEngine();
+    });
+  </script>
+</body>
+</html>
